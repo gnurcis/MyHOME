@@ -376,9 +376,13 @@ class MyhomeOptionsFlowHandler(OptionsFlow):
 
     def __init__(self, config_entry):
         """Initialize MyHome options flow."""
-        self.config_entry = config_entry
+        # Non assegnare self.config_entry: in questa versione di HA è read-only.
+        # Conserviamo l'entry internamente e la esponiamo via property.
+        self.__config_entry = config_entry  # name-mangling (non _)
+
         self.options = dict(config_entry.options)
         self.data = dict(config_entry.data)
+
         if CONF_WORKER_COUNT not in self.options:
             self.options[CONF_WORKER_COUNT] = 1
         if CONF_FILE_PATH not in self.options:
@@ -386,13 +390,17 @@ class MyhomeOptionsFlowHandler(OptionsFlow):
         if CONF_GENERATE_EVENTS not in self.options:
             self.options[CONF_GENERATE_EVENTS] = False
 
+    @property
+    def config_entry(self):
+        """Read-only access to the config entry (avoid assigning HA's property)."""
+        return self.__config_entry
+
     async def async_step_init(self, user_input=None):  # pylint: disable=unused-argument
         """Manage the MyHome options."""
         return await self.async_step_user()
 
-    async def async_step_user(self, user_input=None, errors={}):  # pylint: disable=dangerous-default-value
+    async def async_step_user(self, user_input=None, errors=None):  # FIX: no errors={}
         """Manage the MyHome devices options."""
-
         errors = {}
 
         if user_input is not None:
@@ -403,9 +411,13 @@ class MyhomeOptionsFlowHandler(OptionsFlow):
             self.options.update({CONF_FILE_PATH: user_input[CONF_FILE_PATH]})
             self.options.update({CONF_GENERATE_EVENTS: user_input[CONF_GENERATE_EVENTS]})
 
-            _data_update = not (self.data[CONF_HOST] == user_input[CONF_ADDRESS] and self.data[CONF_OWN_PASSWORD] == user_input[CONF_OWN_PASSWORD])
+            # FIX: password persistita nei data è CONF_PASSWORD (come nel tuo config flow)
+            _data_update = not (
+                self.data.get(CONF_HOST) == user_input[CONF_ADDRESS]
+                and self.data.get(CONF_PASSWORD) == user_input[CONF_OWN_PASSWORD]
+            )
             self.data.update({CONF_HOST: user_input[CONF_ADDRESS]})
-            self.data.update({CONF_OWN_PASSWORD: user_input[CONF_OWN_PASSWORD]})
+            self.data.update({CONF_PASSWORD: user_input[CONF_OWN_PASSWORD]})
 
             try:
                 self.data[CONF_HOST] = str(ipaddress.IPv4Address(self.data[CONF_HOST]))
@@ -429,7 +441,8 @@ class MyhomeOptionsFlowHandler(OptionsFlow):
                     ): str,
                     Required(
                         CONF_OWN_PASSWORD,
-                        description={"suggested_value": self.data[CONF_PASSWORD]},
+                        # FIX: leggi la password salvata in CONF_PASSWORD
+                        description={"suggested_value": self.data.get(CONF_PASSWORD, "12345")},
                     ): str,
                     Required(
                         CONF_FILE_PATH,
